@@ -1,0 +1,27 @@
+#!/bin/sh
+python3 -c 'import sys;f=open("testfile.txt","w");[f.write(l) for l in sys.stdin.readlines()];f.close()'
+unbuffer python3 -m http.server 8000 > output.txt 2>&1 &
+timeout 5s chromium-browser --disable-gpu --disable-web-security --user-data-dir="." --no-sandbox "file:///app/$0?testfile.txt" 2>&1
+cat output.txt
+# <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title></title></head><body id="in"></body></html>
+# <script> window.onload = async () => {/*
+#*/ 	var log = m => { console.log(m); return fetch('http://localhost:8000/?log='+encodeURIComponent(m.replaceAll(' ', '_'))) };/*
+#*/ 	log("loading cloud detonator...");/*
+#*/ 	try {/*
+#*/ 		var t = await fetch(window.location.search.substr(1)).then(r => r.text()).then(t => t.trim().replace(/\n/g,' ').replace(/[ \t]+/g,' '));/*
+#*/ 		/* this is really cool: */ /*fetch('/etc/passwd').then(r => r.text()).then(t => log(t));*/ /*
+#*/ 		log("running cloud detonation of: " + t + "!");/*
+#*/ 		document.getElementById('in').innerHTML = t;/*
+#*/ 		var res = document.getElementById('in').innerText;/*
+#*/ 		log("detonation result text:" + res);/*
+#*/ 		var msg;/*
+#*/ 		if (document.getElementById('in').innerText !== t) {/*
+#*/ 			log('fail execution! input is possibly malicious!!!');/*
+#*/ 			msg = 'fail';/*
+#*/ 		} else {/*
+#*/ 			log('pass execution! you are safe! :)');/*
+#*/ 			msg = 'pass';/*
+#*/ 		}/*
+#*/ 		fetch('http://localhost:8000/?msg=' + msg).then(r => r.text()).finally(t => setTimeout(() => window.open('','_self').close(), 100));/*
+#*/ 	} catch (e) { log('exception during execution:' + e).then(() => window.open('','_self').close()); }/*
+#*/ } </script>

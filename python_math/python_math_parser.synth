@@ -1,0 +1,159 @@
+# declare our class name
+package PythonMathValidator
+
+# compile with ~/src/perl/repo/Sugar/Lang/SugarGrammarCompiler.pm python_math_parser.synth > PythonMathValidator.pm
+
+
+
+# define all of our parser tokens as regex
+tokens {
+	# all groups must be set to non-capturing with ?:
+	string => /"(?:[^"\\]|\\["\\\/bfnrt])*"|'(?:[^'\\]|\\['\\\/bfnrt])*'/s
+	# order matters, as earlier tokens will be tested first before later ones
+	symbol => /!=|==|<=|>=|(?:\*\*|\/\/)=|\*\*|\/\/|[+\-*\/%\^\|\&]=|[+\-*\/%\^\|\&<>,:\(\)\[\]\{\}=!\.]/
+	identifier => /[a-zA-Z_][a-zA-Z0-9_]*+/
+	number => /-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][\+\-]?[0-9]+)?/
+	# standard regex flags are accepted
+	whitespace => /\s++/s
+	comment => /#[^\n]*(?=\n|\Z)/s
+}
+
+# define which tokens get filtered off before syntax parsing
+ignored_tokens {
+	whitespace
+	comment
+}
+
+
+# entry point for the parser
+object sub root => $_ = !python_statement_block->[]
+
+# a block is a list of statements
+list sub python_statement_block
+	=> @[ ((/elif|else/), return | /.*/), [] = !python_statement ]
+
+# a statement is one of several absolute declarations
+object sub python_statement
+	=> 'if', !python_expression, ':', if_statement:{block} = !python_statement_block->[], {expression} => $1{value},
+			@[ 'elif', !python_expression, ':', {branch}[] => elif_statement:{ expression => $6{value} block => !python_statement_block->[] } ],
+			?[ 'else', ':', {branch}[] => else_statement:{ block => !python_statement_block->[] } ]
+		| 'def', *identifier, '(', !python_variable_list->[], ')', ':', function_definition_statement:{block} = !python_statement_block->[], {identifier} => $1, {arguments} => $3{value}
+		| 'while', !python_expression, ':', whilee_statement:{block} = !python_statement_block->[], {expression} => $1{value}
+		| 'for', *identifier, 'in', !python_expression, ':', for_statement:{block} = !python_statement_block->[], {identifier} => $1, {expression} => $3{value}
+		| *identifier, '=', assignment_statement:{expression_list} = !python_expression_list, {identifier} => $0
+		| 'import', import_statement:{identifier} = 'math'
+		| 'import', die 'only "math" is allowed to be imported in EMC'
+		| !python_expression, expression_statement:{expression} => $0{value}
+		| die 'expected python statement'
+
+# a list of variable names
+list sub python_variable_list
+	=> (')'), return
+		| [] = *identifier, @[ ',', [] = *identifier ]
+
+# an expression list is a list of expressions
+list sub python_expression_list
+	=> (')'), return
+		| [] = !python_expression, @[ ',', [] = !python_expression ]
+
+# an expression is a value literal with optional extensions
+object sub python_expression
+	=> $_ = !python_extended_expression->!python_value_literal
+
+# an extended expression is an expression with binary or unary operations
+object sub python_extended_expression
+	=> /!=|==|<=|>=|(?:\*\*|\/\/)=|\*\*|\/\/|[+\-*\/%\^\|\&]=|[+\-*\/%\^\|\&<>]|or|and/, !python_value_literal, $_ => !python_extended_expression->binary_expression:{
+				operator => $0
+				left_expression => $_
+				right_expression => $1{value}
+			}
+		| '.', (/__\S+__/), die 'stop that! magic accessors are forbidden in EMC'
+		| '.', *identifier, $_ => !python_extended_expression->access_expression:{
+				expression => $_
+				identifier => $1
+			}
+		| '[', !python_expression->[], ?[ ':', {end_expression} = !python_expression, ?[ ':', {step_expression} = !python_expression ] ], ']',
+			$_ => !python_extended_expression->array_access_expression:{
+				expression => $_
+				access_expression => $1{value}
+			}
+		| '(', !python_expression_list->[], ')', $_ => !python_extended_expression->function_call_expression:{
+				expression => $_
+				expression_list => $1{value}
+			}
+		| return
+
+# a value literal is a core item to act on
+object sub python_value_literal
+	=> (*string), die 'strings are forbidden in EMC'
+		| ('chr'), die '`chr` function is forbidden in EMC'
+		| ('str'), die '`str` function is forbidden in EMC'
+		# | string_value:{value} = *string
+		| number_value:{value} = *number
+		| boolean_value:{value} = /True|False/
+		| none_value:{value} = 'None'
+		| variable_value:{identifier} = *identifier
+		| '[', ']', list_value:{value} => []
+		| '[', list_value:{value} = !python_list_constructor->[], ']'
+		| '{', '}', object_value:{value} => []
+		| '{', object_value:{value} = !python_object_constructor->[], '}'
+		| '(', parenthesis_expression:{expression} = !python_expression, ')'
+		| die 'expected python value literal'
+
+# a list constructor
+list sub python_list_constructor
+	=> [] = !python_value_literal, @[ ',', [] = !python_value_literal ]
+
+# an object constructor
+list sub python_object_constructor
+	=> [] = *string, ':', [] => !python_value_literal, @[ ',', [] = *string, ':', [] => !python_value_literal ]
+
+
+
+# utility function to transform a tree to a sorted string
+sub string_tree {{
+	my ($self, $tree) = @_;
+	my $s = '';
+	if (ref $tree eq 'HASH') {
+		return join "\n", map { "$_ => " . $self->maybe_indent($self->string_tree($tree->{$_})) } reverse sort keys %$tree;
+	} elsif (ref $tree eq 'ARRAY') {
+		return join "\n", map { "[] => " . $self->maybe_indent($self->string_tree($_)) } @$tree;
+	} else {
+		return $tree;
+	}
+}}
+
+# utility function to help string_tree indent objects
+sub maybe_indent {{
+	my ($self, $string) = @_;
+
+	$string //= '';
+
+	if ($string =~ /\n/) {
+		$string =~ s/(\A|\n)/$1\t/gs;
+		$string =~ s/\A/\n/gs;
+	}
+	return $string;
+}}
+
+# main function, processes files through the parser when executed
+sub main {{
+
+	my $parser = __PACKAGE__->new;
+	eval {
+		foreach my $file (@_) {
+			local $/ = undef;
+			$parser->{text} = <>;
+			my $tree = $parser->parse;
+			# say $parser->string_tree($tree);
+		}
+	};
+	if ($@) {
+		say "$@";
+		exit 1;
+	} else {
+		say "good";
+	}
+}}
+
+

@@ -1,0 +1,24 @@
+FROM ubuntu:18.04
+
+WORKDIR /app
+
+RUN apt update \
+	&& apt install -y python3 git make gcc \
+	&& apt autoclean \
+	&& apt autoremove \
+	&& apt clean
+
+RUN git clone https://github.com/mirror12k/perl-Sugar-utility-library \
+	&& cd perl-Sugar-utility-library \
+	&& git checkout 62b7e37e5154b5ab644e07456bfdc53771848976 \
+	&& cd .. \
+	&& mv perl-Sugar-utility-library/Sugar/ . \
+	&& rm -rf perl-Sugar-utility-library
+
+ENV PERL5LIB=/app
+
+COPY . /app
+
+
+
+

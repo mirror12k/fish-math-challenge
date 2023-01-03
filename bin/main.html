@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Elastic Math Compute Container (E=MC2)</title>
+
+	<link rel="stylesheet" type="text/css" href="https://unpkg.com/bootswatch@5.2.3/dist/lumen/bootstrap.min.css">
+	<script type="text/javascript" src="https://unpkg.com/jquery@3.3.1/dist/jquery.min.js"></script>
+	<link rel="stylesheet" href="//unpkg.com/@highlightjs/cdn-assets@11.7.0/styles/default.min.css">
+	<script src="//unpkg.com/@highlightjs/cdn-assets@11.7.0/highlight.min.js"></script>
+
+	<style type="text/css">
+		.editing-content, .highlighting-content, .highlighting-content code {
+			height: 500px;
+			width: 100%;
+			resize: none;
+			position: absolute;
+			overflow: auto;
+			white-space: nowrap;
+			top: 0;
+			left: 0;
+			font-size: 15pt;
+			font-family: monospace;
+			line-height: 20pt;
+			tab-size: 2;
+
+			margin: 10px;
+			padding: 10px;
+			border: 0;
+			width: 100%;
+			white-space: pre;
+		}
+		.editing-content {
+			color: transparent;
+			background: transparent;
+			caret-color: black;
+		}
+
+		.editing-content { z-index: 1; }
+		.highlighting-content { z-index: 0; }
+
+		.highlighting-content {
+			padding: 0px;
+			margin: 0px;
+			border: 0px;
+		}
+		.highlighting-content code.language-python, .editing-content {
+			padding: 5px;
+			margin: 0px;
+			border: 0px;
+		}
+		.font-weight-bold {
+			font-weight: bold;
+		}
+		.alert pre {
+			overflow: auto;
+			overflow-wrap: break-word;
+			word-wrap: break-word;
+		}
+	</style>
+
+	<script type="text/javascript">
+		function update(text) {
+			let result_element = document.querySelector(".highlighting-content code");
+			// if(text[text.length-1] == "\n") text += " ";
+			result_element.innerHTML = text.replace(new RegExp("&", "g"), "&amp;").replace(new RegExp("<", "g"), "&lt;"); /* Global RegExp */
+			hljs.highlightAll();
+		}
+
+		function sync_scroll() {
+			/* Scroll result to scroll coords of event - sync with textarea */
+			let element = document.querySelector(".editing-content");
+			let result_element = document.querySelector(".highlighting-content code");
+			// Get and set x and y
+			result_element.scrollTop = element.scrollTop;
+			result_element.scrollLeft = element.scrollLeft;
+		}
+
+
+		// api key is used to restrict a VERY insecure server against curious people
+		function get_apikey() {
+			if (window.location.hash.startsWith('#apikey_')) {
+				localStorage.setItem('apikey', window.location.hash.substring('#apikey_'.length));
+				window.location.hash = '';
+			}
+			return localStorage.getItem('apikey');
+		}
+
+		jQuery($ => {
+			// hide the apikey
+			get_apikey();
+
+			// hook submission
+			$('form').on('submit', e => {
+				e.preventDefault();
+
+				var code = $('.editing-content').val();
+
+				$('.button_container button').hide();
+				$('.button_container .text-success').show();
+				$('.alert-danger, .alert-success').hide();
+
+				// call the api with user input
+				console.log("request: ", get_apikey(), code);
+				fetch('/api/v1/execute', {
+					method: 'POST',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify({ apikey: get_apikey(), code: code })
+				}).then(r => r.json()).then(j => {
+					console.log("response: ", j);
+					// on response, we populate text fields with the output from the api call
+					(j.success ? $('.alert-success') : $('.alert-danger')).show();
+					(!j.success ? $('.alert-success') : $('.alert-danger')).hide();
+					(j.success ? $('.alert-success pre') : $('.alert-danger pre')).text(j.error ?? j.msg ?? j.output);
+					$('.alert-warning').text('failed in stage: [' + j.stage + ']');
+
+					$('.button_container button').show();
+					$('.button_container .text-success').hide();
+				});
+
+				return false;
+			});
+
+			// code highlighting
+			update($('textarea').val());
+		});
+	</script>
+</head>
+<body>
+	<br>
+	<br>
+	<br>
+	<div class="container">
+		<h1><span class="font-weight-bold">E=MC^2</span> Console</h1>
+		<hr>
+		<p>Welcome to Elastic Math Compute Container, the latest and most convenient way to execute python math expressions with a focus on web safety!</p>
+		<p>Try me:</p>
+
+		<div>
+			<div class="alert alert-success" style="display: none"><pre></pre></div>
+			<div class="alert alert-danger font-weight-bold" style="display: none">
+				<div class="alert alert-warning"></div>
+				<pre style="background-color: transparent; border: 0px; color: #fff"></pre>
+			</div>
+			<form autocomplete="off">
+				<div style="position: relative; height: 500px">
+					<textarea class="editing-content" cols="40" wrap="soft" oninput="update(this.value); sync_scroll();" onscroll="sync_scroll();">import math
+
+# define our function
+def helloworld():
+	print(1337)
+
+# print our squares
+for i in range(10):
+	print(i*i)
+
+# say hello world in a 1337 way
+helloworld()</textarea>
+					<pre class="highlighting-content"><code class="language-python">import math
+
+# define our function
+def helloworld():
+	print(1337)
+
+# print our squares
+for i in range(10):
+	print(i*i)
+
+# say hello world in a 1337 way
+helloworld()</code></pre>
+				</div>
+				<div class="button_container">
+					<button class="btn btn-success">Execute in container</button>
+					<div class="spinner-border center-spinner text-success text-bold" style="display: none"></div>
+				</div>
+			</form>
+		</div>
+
+		<br>
+		<br>
+		<br>
+
+		<h1>How It Works</h1>
+
+		<br>
+
+		<p>
+			The EMC2 api holds three stages: validation, execution, and detonation.
+			This system ensures that input is securely processed before execution, securely executed, and securely detonated to prevent any possible exploits from returning to your system.
+			The api is designed to be a simple json post request to [/api/v1/execute].
+			You can use this page to try out the api before purchasing the full product.
+			The following section explains how each stage of procesing works:
+		</p>
+
+		<hr>
+
+		<div class="container">
+			<div class="row">
+				<div class="col-md-4">
+					<div class="card border-success">
+						<div class="card-header">Validator Stage</div>
+						<div class="card-body">
+							<h4 class="card-title">EMC2 Python Math Validator</h4>
+							<p class="card-text">
+								The python math validator is the first stage to receive user input.
+								The validator uses a proprietary library to parse your python code and ensure that no unintended code has been inserted.
+								Primarily, the restricts are around strings and libraries.
+								All strings are forbidden in Elastic Math Compute Container, and the validator throws errors if it detects any use of str or chr.
+								Imports are only allowed to import the math library.
+							</p>
+							<hr>
+							<p class="card-text">
+								If you receive an error in the validator stage, please read the error message and amend your python code to appease the validator.
+								Some python features aren't 
+							</p>
+						</div>
+					</div>
+				</div>
+				<div class="col-md-4">
+					<div class="card border-primary">
+						<div class="card-header">Executor Stage</div>
+						<div class="card-body">
+							<h4 class="card-title">EMC2 Python Executor Container</h4>
+							<p class="card-text">
+								The executor runs a docker container with restricted capabilities and user-level permissions to execute the code.
+								The container is also restricted to only running for 5 seconds at the most, to prevent abuse by customers.
+								This combined design protects our servers from any malicious code that my have slipped past the validator.
+							</p>
+							<hr>
+							<p class="card-text">
+								If you receive an error from the executor stage, please <a href="https://learnxinyminutes.com/docs/python/">go here</a> and study up.
+							</p>
+						</div>
+					</div>
+				</div>
+				<div class="col-md-4">
+					<div class="card border-danger">
+						<div class="card-header">Detonator Stage</div>
+						<div class="card-body">
+							<h4 class="card-title">EMC2 Cloud XSS Detonator</h4>
+							<p class="card-text">
+								The detonator runs a docker container with restricted capabilities and user-level permissions to flag malicious output.
+								It spawns an instance of the chromium browser and evaluates the output from the python container to flag possible XSS.
+								If an XSS is detected, it will always flag the output by returning a false value and posting an error that the output is potentially malicious.
+							</p>
+							<hr>
+							<p class="card-text">
+								If you receive an error from the detonator stage, you should immediately drop the output as it is flagged to contain malicious html in it.
+							</p>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+	<br>
+	<br>
+	<br>
+</body>
+</html>
