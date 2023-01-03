@@ -1,4 +1,4 @@
-#!/usr/bin/env -S bash -c "docker run -v \${PWD}:/app -it \$(docker build -q infrastructure) \$@"
+#!/usr/bin/env -S "echo $(docker build -q infrastructure)"
 FROM ubuntu:22.04
 
 WORKDIR /app

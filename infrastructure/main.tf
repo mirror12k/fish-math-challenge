@@ -21,6 +21,7 @@ resource "aws_instance" "instance" {
 
   security_groups = [aws_security_group.instance_security_group.name]
   key_name = aws_key_pair.instance_aws_key.id
+  iam_instance_profile = aws_iam_instance_profile.instance_profile.id
 
   provisioner "remote-exec" {
     inline = [
@@ -30,9 +31,11 @@ resource "aws_instance" "instance" {
       "sudo mkdir /app",
       "sudo chown ubuntu:ubuntu /app",
       "echo 's3://${aws_s3_bucket.deploy_bucket.id}/'",
-      "curl https://s3.amazonaws.com/${aws_s3_bucket.deploy_bucket.id}/package.zip > /app/package.zip",
+      "aws s3 cp s3://${aws_s3_bucket.deploy_bucket.id}/package.zip /app/package.zip",
+      # "curl https://s3.amazonaws.com/${aws_s3_bucket.deploy_bucket.id}/package.zip > /app/package.zip",
       "unzip /app/package.zip -d /app",
       "sudo usermod -aG docker ubuntu",
+      "newgrp docker",
       "mkdir /app/temp_files",
       "cd /app && ./bin/build.sh",
       "echo -n '${file("../flag.txt")}' > /app/chrome_docker/flag.txt",
@@ -56,7 +59,6 @@ resource "aws_key_pair" "instance_aws_key" {
 
 resource "aws_security_group" "instance_security_group" {
   name        = "Allow web traffic"
-  description = "Allow ssh and standard http/https ports inbound and everything outbound"
 
   dynamic "ingress" {
     for_each = local.ingress_ports
@@ -81,6 +83,59 @@ resource "aws_security_group" "instance_security_group" {
     "Terraform" = "true"
   }
 }
+resource "aws_iam_instance_profile" "instance_profile" {
+  name = "${local.fullname}-instance_profile"
+  role = aws_iam_role.instance_role.name
+}
+
+resource "aws_iam_role" "instance_role" {
+  name = "${local.fullname}-instance_role"
+  path = "/"
+
+  assume_role_policy = <<EOF
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Action": "sts:AssumeRole",
+            "Principal": {
+               "Service": "ec2.amazonaws.com"
+            },
+            "Effect": "Allow"
+        }
+    ]
+}
+EOF
+}
+
+resource "aws_iam_policy" "instance_policy" {
+  name = "${local.fullname}-instance_policy"
+
+  policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": [
+        "s3:Get*",
+        "s3:List*"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:s3:::${aws_s3_bucket.deploy_bucket.id}",
+        "arn:aws:s3:::${aws_s3_bucket.deploy_bucket.id}/*"
+      ]
+    }
+  ]
+}
+EOF
+}
+
+resource "aws_iam_policy_attachment" "instance_policy_attachment" {
+  name       = "${local.fullname}-instance_policy_attachment"
+  roles      = [aws_iam_role.instance_role.name]
+  policy_arn = aws_iam_policy.instance_policy.arn
+}
 
 
 resource "random_id" "deploy_bucket_random_id" { byte_length = 8 }
@@ -88,14 +143,14 @@ resource "aws_s3_bucket" "deploy_bucket" {
   bucket = "${local.fullname}-package-${random_id.deploy_bucket_random_id.hex}"
   force_destroy = true
 }
-resource "aws_s3_bucket_acl" "deploy_bucket_acl" {
-  bucket = aws_s3_bucket.deploy_bucket.id
-  acl           = "public-read"
-}
-resource "aws_s3_bucket_policy" "deploy_bucket_policy" {
-  bucket = aws_s3_bucket.deploy_bucket.id
-  policy = templatefile("package_bucket_policy.json", { bucket = aws_s3_bucket.deploy_bucket.id })
-}
+# resource "aws_s3_bucket_acl" "deploy_bucket_acl" {
+#   bucket = aws_s3_bucket.deploy_bucket.id
+#   acl           = "public-read"
+# }
+# resource "aws_s3_bucket_policy" "deploy_bucket_policy" {
+#   bucket = aws_s3_bucket.deploy_bucket.id
+#   policy = templatefile("package_bucket_policy.json", { bucket = aws_s3_bucket.deploy_bucket.id })
+# }
 
 resource "aws_s3_object" "build_file" {
   bucket = aws_s3_bucket.deploy_bucket.id
@@ -103,6 +158,8 @@ resource "aws_s3_object" "build_file" {
   source = "package.zip"
   etag   = filemd5("package.zip")
 }
+
+
 
 
 
